@@ -4,5 +4,4 @@ set(CMAKE_CXX_STANDARD 14)
 
 project("riffedit")
 
-add_executable(riffedit riffmod.cpp)
-add_executable(riffinfo riffinfo.cpp)
+add_executable(riffedit riffedit.cpp)
