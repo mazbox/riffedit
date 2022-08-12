@@ -36,6 +36,6 @@ int main(int argc, char *argv[]) {
 	}
 
 	Riff riff(data);
-	riff.printInfo();
+	riff.print();
 	return 0;
 }

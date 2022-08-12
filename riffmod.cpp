@@ -49,7 +49,7 @@ int main(int argc, char *argv[]) {
 
 	Riff riff(data);
 	if(argc==2) {
-		riff.printInfo();
+		riff.print();
 	} else if(argc==3) {
 		// get chunk
 		auto info = riff.findInfoChunk();

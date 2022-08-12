@@ -428,7 +428,7 @@ public:
 	// ContainerChunk root;
 	Riff(const std::vector<uint8_t> &data) : ContainerChunk(data) {}
 	
-	void printInfo() {
+	void print() {
 		printTree();
 
 		if(format=='WAVE') {
@@ -441,7 +441,7 @@ public:
 
 		auto info = std::dynamic_pointer_cast<ContainerChunk>(findInfoChunk());
 		if(info!=nullptr) {
-			printf("found info list with %d children\n", info->children.size());
+            printf("found info list with %lu children\n", info->children.size());
 			for(auto i : info->children) {
 				auto ic = std::dynamic_pointer_cast<Chunk>(i);
 				printf("%s (%s) = '%s'\n", fourccToDescription(i->id).c_str(), fourccToString(i->id).c_str(), ic->dataAsString().c_str());	
