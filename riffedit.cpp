@@ -1,26 +1,6 @@
 #include "Riff.h"
 #include <fstream>
-// #include <stdio.h>
-// #include <vector>
-// #include <iostream>
 
-bool readFile(std::string filename, std::vector<uint8_t> &outData) {
-	
-	std::ifstream strm(filename, std::ios_base::binary);
-	if (!strm) {
-		printf("cannot open file\n");
-		return false;
-	}
-	
-	strm.unsetf(std::ios_base::skipws);
-	std::istream_iterator<unsigned char> isi(strm), isiEOF;
-	outData.assign(isi, isiEOF);
-	if (!strm.eof()) {
-		printf("read error\n");
-		return false;
-	}
-	return true;
-}
 
 bool writeFile(const std::string &path, const std::vector<uint8_t> &data) {
 	std::ofstream outfile(path, std::ios::out | std::ios::binary);
@@ -33,46 +13,122 @@ bool writeFile(const std::string &path, const std::vector<uint8_t> &data) {
 }
 
 
+std::string stripQuotes(std::string in) {
+	if(in.size()>2) return in;
+	if(in[0]=='\'' || in[0]=='"') {
+		in = in.substr(1);
+	}
+	if(in[in.size()-1]=='\'' || in[in.size()-1]=='"') {
+		in = in.substr(in.size()-2);
+	}
+	return in;
+}
 
+#include "popl.hpp"
+#include <filesystem>
+namespace fs = std::filesystem;
 
 int main(int argc, char *argv[]) {
 
-	if(argc < 2 ||  argc>4) {
-		printf("\n\nUsage: \t%s file.wav [4 char code id] [value]\n\n", argv[0]);
+
+
+	using namespace popl;
+	OptionParser op("Allowed options");
+	auto help_option   = op.add<Switch>("h", "help", "produce help message");
+	auto outputFileOption = op.add<Value<std::string>>("o", "output", "output file");
+	auto deleteTagOption = op.add<Switch>("d", "delete-tag", "delete a tag in the info");
+	auto overwriteOption = op.add<Switch>("w", "overwrite", "overwrite original file");
+
+	op.parse(argc, argv);
+
+
+	auto args = op.non_option_args();
+
+	if(args.size() < 1 ||  args.size() > 3 || help_option->is_set()) {
+		printf("\n\nUsage: \t%s file.wav [4 char code id] [value] [options]\n\n", argv[0]);
+		std::cout << op << "\n";
 		return 1;
 	}
 
 	std::vector<uint8_t> data;
-	if(!readFile(argv[1], data)) {
+
+	std::shared_ptr<MappedFile> m;
+	try {
+		m = std::make_shared<MappedFile>(args[0]);
+	} catch(std::runtime_error &err) {
+		printf("Error: %s\n", err.what());
 		return 1;
 	}
 
-	Riff riff(data);
-	if(argc==2) {
+
+	Riff riff(m->data());
+
+	bool mustSave = false;
+	if(args.size()==1) {
 		riff.print();
-	} else if(argc==3) {
+	} else if(args.size()==2) {
 		// get chunk
 		auto info = riff.findInfoChunk();
 		if(info==nullptr) {
 			printf("Error! no info chunk!\n");
 			return 1;
 		}
-		auto id = stringToFourcc(argv[2]);
-		
-		auto chunk = std::dynamic_pointer_cast<Chunk>(info->findChunk(id));
-		if(chunk==nullptr) {
-			printf("Error! chunk '%s' doesn't exist\n", argv[2]);
-			return 1;
-		}
+		auto id = stringToFourcc(stripQuotes(args[1]));
 
-		printf("'%s' = '%s'\n", argv[2], chunk->dataAsString().c_str());
-	} else if(argc==4) {
+		if(deleteTagOption->is_set()) {
+			if(!info->deleteChunk(id)) {
+				printf("Error - couldn't find tag %s to delete\n", args[1].c_str());
+			}
+			mustSave = true;
+		} else {
+			auto chunk = std::dynamic_pointer_cast<Chunk>(info->findChunk(id));
+			if(chunk==nullptr) {
+				printf("Error! chunk '%s' doesn't exist\n", args[1].c_str());
+				return 1;
+			}
+			printf("'%s' = '%s'\n", args[1].c_str(), chunk->dataAsString().c_str());
+		}
+		
+	} else if(args.size()==3) {
+		
+		auto id = stripQuotes(args[1]);
+
+		auto value = stripQuotes(args[2]);
 		auto info = riff.findOrCreateInfoChunk();
-		info->addOrModifyChunk(stringToFourcc(argv[2]), argv[3]);
-		riff.writeToMemory(data);
-		writeFile(std::string("new.")+argv[1], data);
+
+		info->addOrModifyChunk(stringToFourcc(id), value);
+		mustSave = true;
 	} else {
 		printf("Error, wrong number of options\n");
+	}
+
+	if(mustSave) {
+		fs::path p(args[0]);
+
+		// printf("parent path: %s\n", p.parent_path().string().c_str());
+		p = p.parent_path() / (p.stem().string() + "-new" + p.extension().string());
+		// printf("path: %s\n", p.string().c_str());
+		std::string outputFile = p.string();
+
+		if(overwriteOption->is_set()) {
+			outputFile = args[0];
+		}
+
+		riff.writeToMemory(data);
+
+		// invalidate mapping, disconnect from file
+		m = nullptr;
+
+		if(outputFile==args[0]) {
+			std::string tmpName = tmpnam(nullptr);
+			writeFile(tmpName, data);
+			fs::remove(outputFile);
+			fs::copy(tmpName, outputFile);
+			fs::remove(tmpName);
+		} else {
+			writeFile(outputFile, data);
+		}
+		
 	}
 
 	return 0;

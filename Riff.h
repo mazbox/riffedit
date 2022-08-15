@@ -1,3 +1,4 @@
+#include "MappedFile.h"
 #include <cstdint>
 #include <vector>
 #include <string>
@@ -212,9 +213,39 @@ struct BaseChunk {
 };
 
 
+struct RiffStorage {
+	std::vector<uint8_t> vec;
+	uint8_t *ptr = nullptr;
+	int sizeAtPtr = 0;
+
+	size_t size() {
+		if(ptr==nullptr) {
+			return vec.size();
+		}
+		return sizeAtPtr;
+	}
+
+	void copyString(const std::string &strData) {
+		vec.resize(strData.size()+1);
+		memcpy(vec.data(), strData.data(), strData.size());
+		vec[strData.size()] = 0;
+		ptr = nullptr;
+	}
+
+	void set(uint8_t *data, int sz) {
+		this->ptr = data;
+		this->sizeAtPtr = sz;
+	}
+	uint8_t *data() {
+		if(ptr!=nullptr) return ptr;
+		return vec.data();
+	}
+};
+
 struct Chunk : public BaseChunk {
 	
-	std::vector<uint8_t> data;
+	
+	RiffStorage storage;
 
 	Chunk(fourcc id, const std::string &strData) {
 		this->id = id;
@@ -222,30 +253,29 @@ struct Chunk : public BaseChunk {
 	}
 
 	void setValue(const std::string &strData) {
-		data.resize(strData.size()+1);
-		memcpy(data.data(), strData.data(), strData.size());
-		data[strData.size()] = 0;
+		storage.copyString(strData);
 	}
 	
 	Chunk(uint8_t *d) {
 		auto *strct = (ChunkFormat*)d;
 		id = rawToFourcc((uint8_t*)&strct->id[0]);
-		data.resize(strct->size);
-		memcpy(data.data(), &strct->data, data.size());
+		// data.resize(strct->size);
+		// memcpy(data.data(), &strct->data, data.size());
+		storage.set(strct->data, strct->size);
 	}
 
 	void printInfo() override {
 		printf("'%s' chunk (size: %lu bytes)\n", 
 			fourccToString(id).c_str(), 
-			data.size());
+			storage.size());
 	}
 
 	std::string dataAsString() {
-		return std::string((char*)data.data());
+		return std::string((char*)storage.data());
 	}
 
 	int getSizeIncludingHeaderAndPadding() override {
-		int sz = data.size() + 8;
+		int sz = storage.size() + 8;
 		if(sz%2==1) sz++; // padding
 		return sz;
 	}
@@ -254,12 +284,12 @@ struct Chunk : public BaseChunk {
 		fourccToRaw(id, d);
 		d += 4;
 		auto *dd = (uint32_t*)d;
-		dd[0] = data.size();
+		dd[0] = storage.size();
 		d += 4;
-		memcpy(d, data.data(), data.size());
+		memcpy(d, storage.data(), storage.size());
 
-		d += data.size();
-		if(data.size()%2==1) {
+		d += storage.size();
+		if(storage.size()%2==1) {
 			d[0] = 0;
 			d++; // padding
 		}
@@ -273,6 +303,7 @@ struct Chunk : public BaseChunk {
 struct ContainerChunk : public BaseChunk {
 
 	fourcc format;
+	std::vector<std::shared_ptr<BaseChunk>> children;
 
 	ContainerChunk(fourcc id, fourcc format) {
 		this->id = id;
@@ -340,7 +371,6 @@ struct ContainerChunk : public BaseChunk {
 			fourccToString(format).c_str());
 	}
 
-	std::vector<std::shared_ptr<BaseChunk>> children;
 
 	void addChild(std::shared_ptr<BaseChunk> ch) {
 		children.push_back(ch);
@@ -355,9 +385,20 @@ struct ContainerChunk : public BaseChunk {
 		}
 	}
 
+	bool deleteChunk(fourcc id) {
+		for(int i = 0; i < children.size(); i++) {
+			if(children[i]->id==id) {
+				children.erase(children.begin() + i);
+				return true;
+			}
+		} 
+		return false;
+	}
+
 	std::shared_ptr<BaseChunk> findChunk(fourcc id) {
 		for(auto ch : children) {
 			if(ch->id==id) return ch;
+			else printf("Found chunk %s\n", fourccToString(ch->id).c_str());
 		}
 		return nullptr;
 	}
@@ -422,11 +463,14 @@ private:
 };
 
 
+#pragma pack()
 class Riff : public ContainerChunk {
 public:
 
-	// ContainerChunk root;
-	Riff(const std::vector<uint8_t> &data) : ContainerChunk(data) {}
+	
+
+	Riff(std::shared_ptr<MappedFile> mappedFile) : Riff(mappedFile->data()) {}
+	Riff(const uint8_t *data) : ContainerChunk(data) {}
 	
 	void print() {
 		printTree();
@@ -450,16 +494,16 @@ public:
 	}
 
 	void printWaveFormat(std::shared_ptr<Chunk> fmtChunk) {
-		auto *fmt = (WavFmtChunkFormat*)fmtChunk->data.data();
+		auto *fmt = (WavFmtChunkFormat*)fmtChunk->storage.data();
 		printf("%d channel%c @ %dHz / %d bit\n", fmt->channels, fmt->channels>1?'s':0x1a, fmt->sampleRate, fmt->bitsPerSample);
 	}
 
+
 	void writeToMemory(std::vector<uint8_t> &d) {
 		d.resize(getSizeIncludingHeaderAndPadding());
-		// std::fill(d.begin(), d.end(), 0); // remove this
 		write(d.data());
 	}
 };
 
 
-#pragma pack()
+
