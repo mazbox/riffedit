@@ -316,8 +316,12 @@ struct ContainerChunk : public BaseChunk {
 		format = rawToFourcc((uint8_t*)&data->format[0]);
 
 		parseChildren(data);
-		assert(originalSize==calculateSize());
-		// printf("size: %d, calculated size: %d\n", originalSize, calculateSize());
+		if(originalSize!=calculateSize()) {
+			printf("size: %d, calculated size: %d\n", originalSize, calculateSize());
+			throw std::runtime_error("size: " + std::to_string(originalSize) +
+			" calculated size: " + std::to_string(calculateSize()));
+			// assert(originalSize==calculateSize());
+		}
 	}
 
 
@@ -398,7 +402,6 @@ struct ContainerChunk : public BaseChunk {
 	std::shared_ptr<BaseChunk> findChunk(fourcc id) {
 		for(auto ch : children) {
 			if(ch->id==id) return ch;
-			else printf("Found chunk %s\n", fourccToString(ch->id).c_str());
 		}
 		return nullptr;
 	}

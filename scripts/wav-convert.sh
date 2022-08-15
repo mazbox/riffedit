@@ -7,12 +7,15 @@
 # 3. then remove xml tags
 # 4. then remove whitespace
 bitDepth=$(afinfo $1 -x | grep bit_depth -m 1 | sed -e 's/<[^>]*>//g' | sed -e 's/[[:blank:]]//g')
-creationDate=$(./scripts/creation-date.sh $1)
+creationDate=$(creation-date.sh $1)
+echo "==============================";
+echo "$1"
 echo "Creation Date: $creationDate"
 echo "Bit depth: $bitDepth"
 
 # riff date format is '2002-08-31'
 
 # echo "LEI$bitDepth"
-afconvert -f 'WAVE' -d "LEI$bitDepth" $1 -o $1.wav
-./build/riffedit $1.wav 'DTIM' "$creationDate"
+wav=${1%.*}.wav
+afconvert -f 'WAVE' -d "LEI$bitDepth" $1 -o $wav
+riffedit $wav -w 'DTIM' "$creationDate" 'IENG' 'Marek Bereza' 'ISFT' 'Koala Sampler' 'TAPE' "$1"

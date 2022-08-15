@@ -30,8 +30,6 @@ namespace fs = std::filesystem;
 
 int main(int argc, char *argv[]) {
 
-
-
 	using namespace popl;
 	OptionParser op("Allowed options");
 	auto help_option   = op.add<Switch>("h", "help", "produce help message");
@@ -44,7 +42,7 @@ int main(int argc, char *argv[]) {
 
 	auto args = op.non_option_args();
 
-	if(args.size() < 1 ||  args.size() > 3 || help_option->is_set()) {
+	if(args.size() < 1 || help_option->is_set()) {
 		printf("\n\nUsage: \t%s file.wav [4 char code id] [value] [options]\n\n", argv[0]);
 		std::cout << op << "\n";
 		return 1;
@@ -60,15 +58,20 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-
-	Riff riff(m->data());
+	std::shared_ptr<Riff> riff;
+	try {
+		riff = std::make_shared<Riff>(m->data());
+	} catch(std::runtime_error &err) {
+		printf("got error: %s\n", err.what());
+		return 1;
+	}
 
 	bool mustSave = false;
 	if(args.size()==1) {
-		riff.print();
+		riff->print();
 	} else if(args.size()==2) {
 		// get chunk
-		auto info = riff.findInfoChunk();
+		auto info = riff->findInfoChunk();
 		if(info==nullptr) {
 			printf("Error! no info chunk!\n");
 			return 1;
@@ -89,15 +92,17 @@ int main(int argc, char *argv[]) {
 			printf("'%s' = '%s'\n", args[1].c_str(), chunk->dataAsString().c_str());
 		}
 		
-	} else if(args.size()==3) {
+	} else if(args.size()>=3) {
 		
-		auto id = stripQuotes(args[1]);
+		for(int i = 1; i < args.size()-1; i+=2) {
+			auto id = stripQuotes(args[i]);
+			auto value = stripQuotes(args[i+1]);
 
-		auto value = stripQuotes(args[2]);
-		auto info = riff.findOrCreateInfoChunk();
+			auto info = riff->findOrCreateInfoChunk();
 
-		info->addOrModifyChunk(stringToFourcc(id), value);
-		mustSave = true;
+			info->addOrModifyChunk(stringToFourcc(id), value);
+			mustSave = true;
+		}
 	} else {
 		printf("Error, wrong number of options\n");
 	}
@@ -114,7 +119,7 @@ int main(int argc, char *argv[]) {
 			outputFile = args[0];
 		}
 
-		riff.writeToMemory(data);
+		riff->writeToMemory(data);
 
 		// invalidate mapping, disconnect from file
 		m = nullptr;
@@ -128,7 +133,6 @@ int main(int argc, char *argv[]) {
 		} else {
 			writeFile(outputFile, data);
 		}
-		
 	}
 
 	return 0;
